@@ -6,12 +6,13 @@ import (
 
 	"github.com/kolanos/goker/hand"
 	"github.com/kolanos/goker/table"
+	"github.com/stretchr/testify/assert"
 )
 
 type testCase struct {
 	start       *table.Table
 	actions     []table.Action
-	condition   func(table.State) bool
+	condition   func(*table.State) bool
 	description string
 }
 
@@ -20,7 +21,7 @@ var (
 		{
 			start:   threePerson100Buyin(),
 			actions: nil,
-			condition: func(s table.State) bool {
+			condition: func(s *table.State) bool {
 				return s.Seats[0].Chips == 98 && s.Seats[1].Chips == 100 && s.Seats[2].Chips == 99 && s.Active.Seat == 1
 			},
 			description: "initial blinds",
@@ -30,7 +31,7 @@ var (
 			actions: []table.Action{
 				{table.Raise, 5},
 			},
-			condition: func(s table.State) bool {
+			condition: func(s *table.State) bool {
 				return s.Seats[0].Chips == 98 && s.Seats[1].Chips == 93 && s.Seats[2].Chips == 99 && s.Active.Seat == 2 && s.Cost == 7
 			},
 			description: "preflop raise",
@@ -45,7 +46,7 @@ var (
 				{table.Bet, 5},
 				{table.Fold, 0},
 			},
-			condition: func(s table.State) bool {
+			condition: func(s *table.State) bool {
 				return s.Seats[0].Chips == 97 && s.Seats[1].Chips == 107 && s.Seats[2].Chips == 93 && s.Active.Seat == 2 && s.Button == 2
 			},
 			description: "full hand 1",
@@ -56,14 +57,11 @@ var (
 func TestTable(t *testing.T) {
 	for _, tc := range testCases {
 		tbl := tc.start
+
 		for _, a := range tc.actions {
-			if err := tbl.Act(a); err != nil {
-				t.Fatal(err)
-			}
+			assert.Nil(t, tbl.Act(a))
 		}
-		if tc.condition(tbl.State()) == false {
-			t.Fatalf(tc.description)
-		}
+		assert.Truef(t, tc.condition(tbl.State()), tc.description)
 	}
 }
 
@@ -75,8 +73,18 @@ func threePerson100Buyin() *table.Table {
 		Variant: table.TexasHoldem,
 		Limit:   table.NoLimit,
 		Stakes:  table.Stakes{SmallBlind: 1, BigBlind: 2},
-		Buyin:   100,
+		BuyIn:   100,
 	}
 	ids := []string{"a", "b", "c"}
-	return table.New(dealer, opts, ids)
+	return table.New(dealer, opts, len(ids), ids)
+}
+
+func TestTableNew(t *testing.T) {
+	tbl := threePerson100Buyin()
+	seats := tbl.Seats()
+	assert.Equal(t, 3, len(seats))
+	for i, p := range seats {
+		assert.NotNil(t, p)
+		assert.Equal(t, i, p.Seat)
+	}
 }

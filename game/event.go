@@ -60,7 +60,7 @@ func ParseEvent(b []byte) (*Event, error) {
 
 func parseRegister(b []byte) (*RegisterData, error) {
 	var data *RegisterData
-	if err := json.Unmarhsal(b, data); err != nil {
+	if err := json.Unmarshal(b, data); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -68,7 +68,7 @@ func parseRegister(b []byte) (*RegisterData, error) {
 
 func parseSendMessage(b []byte) (*SendMessageData, error) {
 	var data *SendMessageData
-	if err := json.Unmarhsal(b, data); err != nil {
+	if err := json.Unmarshal(b, data); err != nil {
 		return nil, err
 	}
 	return data, nil

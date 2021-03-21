@@ -38,16 +38,16 @@ const (
 )
 
 type Options struct {
-	Buyin   int
-	Variant Variant
-	Stakes  Stakes
-	Limit   Limit
+	BuyIn   int     `json:"buyIn"`
+	Variant Variant `json:"variant"`
+	Stakes  Stakes  `json:"stakes"`
+	Limit   Limit   `json:"limit"`
 }
 
 type Stakes struct {
-	BigBlind   int
-	SmallBlind int
-	Ante       int
+	BigBlind   int `json:"bigBlind"`
+	SmallBlind int `json:"smallBlind"`
+	Ante       int `json:"ante"`
 }
 
 type Table struct {
@@ -63,25 +63,13 @@ type Table struct {
 	cost    int
 }
 
-func New(dealer hand.Dealer, opts Options, playerIDs []string) *Table {
+// New creates a new table
+func New(dealer hand.Dealer, opts Options, numSeats int, playerIDs []string) *Table {
 	status := Dealing
 	if len(playerIDs) < 2 {
 		status = Waiting
 	}
-	seats := []*Player{}
-	for _, id := range playerIDs {
-		p := &Player{
-			ID:    id,
-			Chips: opts.Buyin,
-		}
-		seats = append(seats, p)
-	}
-	// rand.Shuffle(len(seats), func(i int, j int) {
-	// 	seats[i], seats[j] = seats[j], seats[i]
-	// })
-	for i, seat := range seats {
-		seat.Seat = i
-	}
+	seats := make([]*Player, numSeats)
 	t := &Table{
 		options: opts,
 		seats:   seats,
@@ -89,34 +77,45 @@ func New(dealer hand.Dealer, opts Options, playerIDs []string) *Table {
 		status:  status,
 		dealer:  dealer,
 	}
+	for i, id := range playerIDs {
+		p := &Player{
+			ID:    id,
+			Chips: opts.BuyIn,
+		}
+		t.Sit(p, i)
+	}
 	t.setupRound()
 	return t
 }
 
 type State struct {
-	Options Options
-	Seats   []Player
-	Cards   []hand.Card
-	Active  Player
-	Status  Status
-	Round   Round
-	Button  int
-	Cost    int
-	Pot     int
+	Options Options     `json:"options"`
+	Seats   []*Player   `json:"seats"`
+	Cards   []hand.Card `json:"cards"`
+	Active  *Player     `json:"active"`
+	Status  Status      `json:"status"`
+	Round   Round       `json:"round"`
+	Button  int         `json:"button"`
+	Cost    int         `json:"cost"`
+	Pot     int         `json:"pot"`
 }
 
-func (t *Table) State() State {
-	seats := []Player{}
-	pot := 0
+func (t *Table) State() *State {
+	var (
+		seats []*Player
+		pot   int
+	)
 	for _, seat := range t.seats {
-		seats = append(seats, *seat)
-		pot += seat.ChipsInPot
+		seats = append(seats, seat)
+		if seat != nil {
+			pot += seat.ChipsInPot
+		}
 	}
-	return State{
+	return &State{
 		Options: t.options,
 		Seats:   seats,
 		Cards:   append([]hand.Card(nil), t.cards...),
-		Active:  *t.active,
+		Active:  t.active,
 		Button:  t.button,
 		Cost:    t.cost,
 		Round:   t.round,
@@ -126,8 +125,8 @@ func (t *Table) State() State {
 }
 
 type Action struct {
-	Type  ActionType
-	Chips int
+	Type  ActionType `json:"type"`
+	Chips int        `json:"chips"`
 }
 
 type ActionType int
@@ -141,6 +140,20 @@ const (
 	AllIn
 )
 
+// Sit seats a player at the table
+func (t *Table) Sit(p *Player, seat int) error {
+	if seat < -0 || seat > len(t.seats)-1 {
+		return errors.New("Invalid seat selection")
+	}
+	if t.seats[seat] != nil {
+		return errors.New("Seat is already taken")
+	}
+	t.seats[seat] = p
+	p.Seat = seat
+	return nil
+}
+
+// Fold folds hand for the active player
 func (t *Table) Fold() error {
 	return t.Act(Action{Type: Fold})
 }
@@ -166,6 +179,9 @@ func (t *Table) AllIn() error {
 }
 
 func (t *Table) Act(a Action) error {
+	if t.active == nil {
+		return errors.New("No activate player")
+	}
 	if includes(t.LegalActions(), a.Type) == false {
 		return errors.New("table: illegal action attempted")
 	}
@@ -196,10 +212,10 @@ func (t *Table) Act(a Action) error {
 	return nil
 }
 
-func (t *Table) Seats() []Player {
-	seats := []Player{}
+func (t *Table) Seats() []*Player {
+	var seats []*Player
 	for _, seat := range t.seats {
-		seats = append(seats, *seat)
+		seats = append(seats, seat)
 	}
 	return seats
 }
@@ -323,13 +339,13 @@ func (t *Table) pots() []*sidePot {
 	sort.Slice(contesting, func(i, j int) bool {
 		return contesting[i].ChipsInPot < contesting[j].ChipsInPot
 	})
-	costs := []int{}
+	var costs []int
 	for _, seat := range contesting {
 		if contains(costs, seat.ChipsInPot) == false {
 			costs = append(costs, seat.ChipsInPot)
 		}
 	}
-	pots := []*sidePot{}
+	var pots []*sidePot
 	for i, cost := range costs {
 		pot := &sidePot{}
 		min := 0
@@ -410,9 +426,9 @@ func (t *Table) distanceFromButton(p *Player) int {
 }
 
 func (t *Table) contesting() []*Player {
-	contesting := []*Player{}
+	var contesting []*Player
 	for _, seat := range t.seats {
-		if seat.Folded == false {
+		if seat != nil && seat.Folded == false {
 			contesting = append(contesting, seat)
 		}
 	}
@@ -420,24 +436,23 @@ func (t *Table) contesting() []*Player {
 }
 
 type Player struct {
-	ID         string
-	Seat       int
-	Chips      int
-	ChipsInPot int
-	Acted      bool
-	Folded     bool
-	AllIn      bool
-	Cards      []hand.Card
+	ID         string      `json:"id"`
+	Seat       int         `json:"seat"`
+	Chips      int         `json:"chips"`
+	ChipsInPot int         `json:"chipsInPot"`
+	Acted      bool        `json:"acted"`
+	Folded     bool        `json:"folded"`
+	AllIn      bool        `json:"allIn"`
+	Cards      []hand.Card `json:"cards"`
 }
 
 func (p *Player) contribute(chips int) {
-	amount := chips
-	if p.Chips <= amount {
-		amount = p.Chips
+	if p.Chips <= chips {
+		chips = p.Chips
 		p.AllIn = true
 	}
-	p.ChipsInPot += amount
-	p.Chips -= amount
+	p.ChipsInPot += chips
+	p.Chips -= chips
 }
 
 func includes(actions []ActionType, include ...ActionType) bool {
