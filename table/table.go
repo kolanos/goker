@@ -30,18 +30,19 @@ const (
 	OmahaHi
 )
 
-type Limit int
+type LimitType int
 
 const (
-	NoLimit Limit = iota
+	Limit LimitType = iota
+	NoLimit
 	PotLimit
 )
 
 type Options struct {
-	BuyIn   int     `json:"buyIn"`
-	Variant Variant `json:"variant"`
-	Stakes  Stakes  `json:"stakes"`
-	Limit   Limit   `json:"limit"`
+	BuyIn   int       `json:"buyIn"`
+	Variant Variant   `json:"variant"`
+	Stakes  Stakes    `json:"stakes"`
+	Limit   LimitType `json:"limit"`
 }
 
 type Stakes struct {
@@ -180,12 +181,11 @@ func (t *Table) AllIn() error {
 
 func (t *Table) Act(a Action) error {
 	if t.active == nil {
-		return errors.New("No activate player")
+		return errors.New("No active player")
 	}
 	if includes(t.LegalActions(), a.Type) == false {
 		return errors.New("table: illegal action attempted")
 	}
-	// TODO enforce limits, min bets
 	switch a.Type {
 	case Fold:
 		t.active.Folded = true
@@ -194,7 +194,17 @@ func (t *Table) Act(a Action) error {
 		t.active.contribute(t.owed())
 	case Bet, Raise:
 		if a.Chips < t.options.Stakes.BigBlind {
-			return errors.New("table: bet or raise must be a minimum of the big blind")
+			a.Chips = t.options.Stakes.BigBlind
+		}
+		if t.options.Limit == Limit {
+			a.Chips = t.options.Stakes.BigBlind
+			if t.round == Turn || t.round == River {
+				a.Chips = a.Chips * 2
+			}
+		}
+		chipsInPots := t.chipsInPots()
+		if t.options.Limit == PotLimit && a.Chips > t.chipsInPots() {
+			a.Chips = chipsInPots
 		}
 		t.active.contribute(t.owed())
 		t.active.contribute(a.Chips)
@@ -363,6 +373,15 @@ func (t *Table) pots() []*sidePot {
 		pots = append(pots, pot)
 	}
 	return pots
+}
+
+// chipsInPots returns the total chips in play
+func (t *Table) chipsInPots() int {
+	var chips int
+	for _, pot := range t.pots() {
+		chips += pot.chips
+	}
+	return chips
 }
 
 func (t *Table) resetAction() {
